@@ -31,12 +31,5 @@ jobs:
             -H "Content-Type: application/json" \
             -d "$PAYLOAD" | jq -r '.choices[0].message.content')
           echo "$RESPONSE"
-
-      - name: Post review as comment
-        env:
-         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-         RESPONSE="your formatted response from OpenAI here"
-         PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
-         gh pr comment "$PR_NUMBER" --body "$RESPONSE"
-     
+          PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
+          gh pr comment "$PR_NUMBER" --body "$RESPONSE"
