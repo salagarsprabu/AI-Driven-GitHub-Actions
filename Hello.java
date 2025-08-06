@@ -5,6 +5,6 @@ public class Hello {
     }
 
     public String greet() {
-        return "New data!";
+        return "New lines added after fix!";
     }
 }
