@@ -5,6 +5,8 @@ public class Hello {
 
     public String greet() {
         return "Hello!";
+     public String greet() {
+        return "Welcome!";
 
     }
 }
