@@ -20,6 +20,8 @@ jobs:
       - name: Get PR Diff
         id: diff
         run: |
+          git fetch --unshallow || true
+          git fetch origin master
           DIFF=$(git fetch origin master && git diff origin/master...HEAD)
           echo "diff<<EOF" >> $GITHUB_OUTPUT
           echo "$DIFF" >> $GITHUB_OUTPUT
