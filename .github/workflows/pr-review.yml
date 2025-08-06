@@ -38,7 +38,7 @@ jobs:
               "model": "openai/gpt-4o",
               "messages": [{
                 "role": "user",
-                "content": "Explain the concept of devops"'"
+                "content": "Explain the concept of devops"
               }]
             }')
        
