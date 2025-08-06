@@ -1,4 +1,4 @@
-name: PR AI Review
+name: PR AI Review with Java
  
 on:
   pull_request:
