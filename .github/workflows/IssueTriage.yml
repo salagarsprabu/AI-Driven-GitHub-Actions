@@ -1,0 +1,49 @@
+name: AI Issue Triage
+
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get Issue Content
+        id: issue
+        run: |
+          echo "ISSUE_TITLE=$(jq -r .issue.title "$GITHUB_EVENT_PATH")" >> $GITHUB_ENV
+          echo "ISSUE_BODY=$(jq -r .issue.body "$GITHUB_EVENT_PATH")" >> $GITHUB_ENV
+          echo "ISSUE_NUMBER=$(jq -r .issue.number "$GITHUB_EVENT_PATH")" >> $GITHUB_ENV
+
+      - name: Call OpenAI for Triage Suggestions
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          PROMPT="Analyze the following GitHub issue and suggest a label (e.g., bug, feature, question), priority (high/medium/low), and a short summary or first response.
+
+          Title: $ISSUE_TITLE
+
+          Body:
+          $ISSUE_BODY"
+
+          REQUEST=$(jq -n --arg prompt "$PROMPT" '{
+            model: "gpt-4",
+            messages: [{"role": "user", "content": $prompt}]
+          }')
+
+          RESPONSE=$(curl -s https://api.openai.com/v1/chat/completions \
+            -H "Authorization: Bearer '"$OPENAI_API_KEY"'" \
+            -H "Content-Type: application/json" \
+            -d "$REQUEST")
+
+          AI_RESPONSE=$(echo "$RESPONSE" | jq -r '.choices[0].message.content')
+          echo "AI_RESPONSE<<EOF" >> $GITHUB_ENV
+          echo "$AI_RESPONSE" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: Comment AI Suggestion on Issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$AI_RESPONSE" | gh issue comment "$ISSUE_NUMBER" --body-file -
