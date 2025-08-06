@@ -38,7 +38,7 @@ jobs:
               "model": "openai/gpt-4o",
               "messages": [{
                 "role": "user",
-                "content": "Please review the following Git diff:\n'"${{ steps.diff.outputs.diff }}"'"
+                "content": "Explain the concept of devops"'"
               }]
             }')
        
