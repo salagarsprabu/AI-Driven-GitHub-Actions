@@ -20,6 +20,13 @@ jobs:
       - name: Fetch Base Branch
         run: git fetch origin master
 
+      - name: Ensure Base Exists for Comparison
+        run: |
+         git fetch --unshallow || true
+         git fetch origin master
+         git merge-base origin/master HEAD || git merge --allow-unrelated-histories -m "Temporary merge" origin/master || true
+
+
       - name: Get Java File Diff
         id: get_diff
         run: |
