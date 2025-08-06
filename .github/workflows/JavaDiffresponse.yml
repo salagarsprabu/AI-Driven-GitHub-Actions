@@ -1,0 +1,48 @@
+name: AI Java File Diff Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+  models: read
+
+jobs:
+  java-diff-review:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Get Java File Diff
+        run: |
+          git fetch origin master
+          git diff origin/master...HEAD -- '*.java' | head -c 7000 > diff.txt
+
+      - name: Ask GitHub AI Model to Review Diff
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PROMPT=$(echo "Summarize the changes in the following Java code diff only:\n\n$(cat diff.txt)")
+          PAYLOAD=$(jq -n --arg content "$PROMPT" '{
+            "model": "openai/gpt-4o",
+            "messages": [{"role": "user", "content": $content}]
+          }')
+
+          RESPONSE=$(curl -s https://models.github.ai/inference/chat/completions \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" | jq -r '.choices[0].message.content')
+
+          echo "$RESPONSE" > response.txt
+
+      - name: Comment on PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
+          COMMENT=$(cat response.txt)
+          gh pr comment "$PR_NUMBER" --body "$COMMENT"

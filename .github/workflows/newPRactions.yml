@@ -1,0 +1,35 @@
+name: PR AI Review
+ 
+on:
+  pull_request:
+    types: [opened, synchronize]
+ 
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Fetch all branches
+        run: git fetch --all
+ 
+      - name: Call OpenAI to Review PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DIFF=$(git diff origin/master...HEAD | head -c 8000)
+          PAYLOAD=$(jq -n --arg diff "$DIFF" '{
+           "model": "openai/gpt-4o",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Explain the concept of DevOps"
+              }
+            ]
+          }')
+          RESPONSE=$(curl -s https://models.github.ai/inference/chat/completions \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" | jq -r '.choices[0].message.content')
+          echo "$RESPONSE"
+          PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
+          gh pr comment "$PR_NUMBER" --body "$RESPONSE"

@@ -1,0 +1,52 @@
+name: PR Review with GitHub Model
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pull-requests: write
+  models: read  # Required to use GitHub-hosted AI models
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Get PR Diff
+        id: diff
+        run: |
+          git fetch --unshallow || true
+          git fetch origin master
+          DIFF=$(git fetch origin master && git diff origin/master...HEAD)
+          echo "diff<<EOF" >> $GITHUB_OUTPUT
+          echo "$DIFF" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Call GitHub Model for Review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RESPONSE=$(curl -s https://models.github.ai/inference/chat/completions \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "model": "openai/gpt-4o",
+              "messages": [{
+                "role": "user",
+                "content": "Explain the concept of devops"
+              }]
+            }')
+       
+      - name: Post review as comment
+        env:
+         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+         RESPONSE="your formatted response from OpenAI here"
+         PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
+         gh pr comment "$PR_NUMBER" --body "$RESPONSE"
+     
