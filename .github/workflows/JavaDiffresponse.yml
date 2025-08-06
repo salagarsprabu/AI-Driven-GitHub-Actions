@@ -1,49 +1,48 @@
-name: PR AI Review with Java
- 
+name: AI Java File Diff Review
+
 on:
   pull_request:
     types: [opened, synchronize]
- 
+
+permissions:
+  contents: read
+  pull-requests: write
+  models: read
+
 jobs:
-  review:
+  java-diff-review:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
-      - name: Fetch all branches
-        run: git fetch --all
-      - name: Call GitHub Model to Review PR Changes
-        env:
-         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Get Java File Diff
         run: |
-    
-          git fetch --unshallow || true
           git fetch origin master
+          git diff origin/master...HEAD -- '*.java' | head -c 7000 > diff.txt
 
-          DIFF=$(git diff origin/master...HEAD -- '*.java' | head -c 8000)
+      - name: Ask GitHub AI Model to Review Diff
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PROMPT=$(echo "Summarize the changes in the following Java code diff only:\n\n$(cat diff.txt)")
+          PAYLOAD=$(jq -n --arg content "$PROMPT" '{
+            "model": "openai/gpt-4o",
+            "messages": [{"role": "user", "content": $content}]
+          }')
 
- 
-          PROMPT="The following is a Git diff between two versions of a Java file in a GitHub pull request. Summarize what has changed in terms of logic, methods, or classes. Highlight key differences:\n\n$DIFF"
+          RESPONSE=$(curl -s https://models.github.ai/inference/chat/completions \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" | jq -r '.choices[0].message.content')
 
-     
-          PAYLOAD=$(jq -n --arg diff "$PROMPT" '{
-          "model": "openai/gpt-4o",
-          "messages": [
-           {
-          "role": "user",
-          "content": $diff
-           }
-           ]
-           }')
+          echo "$RESPONSE" > response.txt
 
-           RESPONSE=$(curl -s https://models.github.ai/inference/chat/completions \
-           -H "Authorization: Bearer $GITHUB_TOKEN" \
-           -H "Content-Type: application/json" \
-           -d "$PAYLOAD" | jq -r '.choices[0].message.content')
-
- 
-           echo "AI Response:"
-           echo "$RESPONSE"
-
- 
+      - name: Comment on PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
           PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
-          gh pr comment "$PR_NUMBER" --body "$RESPONSE"
+          COMMENT=$(cat response.txt)
+          gh pr comment "$PR_NUMBER" --body "$COMMENT"
