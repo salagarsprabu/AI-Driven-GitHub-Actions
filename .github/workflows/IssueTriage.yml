@@ -30,8 +30,8 @@ jobs:
          ASSIGNEE=""
          fi
 
-echo "Assigned team: $ASSIGNED_TEAM"
-echo "Assignee: $ASSIGNEE" >> $GITHUB_ENV
+         echo "Assigned team: $ASSIGNED_TEAM"
+         echo "Assignee: $ASSIGNEE" >> $GITHUB_ENV
 
       - name: Call OpenAI for Triage Suggestions
         env:
