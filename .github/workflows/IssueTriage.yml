@@ -15,9 +15,19 @@ jobs:
       - name: Get Issue Content
         id: issue
         run: |
-          echo "ISSUE_TITLE=$(jq -r .issue.title "$GITHUB_EVENT_PATH")" >> $GITHUB_ENV
-          echo "ISSUE_BODY=$(jq -r .issue.body "$GITHUB_EVENT_PATH")" >> $GITHUB_ENV
-          echo "ISSUE_NUMBER=$(jq -r .issue.number "$GITHUB_EVENT_PATH")" >> $GITHUB_ENV
+         ISSUE_TITLE=$(jq -r .issue.title "$GITHUB_EVENT_PATH")
+         ISSUE_BODY=$(jq -r .issue.body "$GITHUB_EVENT_PATH")
+         ISSUE_NUMBER=$(jq -r .issue.number "$GITHUB_EVENT_PATH")
+
+         {
+          echo "ISSUE_TITLE<<EOF"
+          echo "$ISSUE_TITLE"
+          echo "EOF"
+          echo "ISSUE_BODY<<EOF"
+          echo "$ISSUE_BODY"
+          echo "EOF"
+          echo "ISSUE_NUMBER=$ISSUE_NUMBER"
+         } >> $GITHUB_ENV
 
       - name: Call OpenAI for Triage Suggestions
         env:
