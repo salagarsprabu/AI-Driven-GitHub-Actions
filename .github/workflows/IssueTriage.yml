@@ -23,8 +23,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          PROMPT="Analyze the following GitHub issue and suggest a label (e.g., bug, feature, question), priority (high/medium/low), and a short summary or first response.
-
+          
+          PROMPT="Analyze the following GitHub issue and suggest:
+          - a label (bug, feature, question)
+          - priority (high, medium, low)
+          - the most appropriate team to assign (e.g., frontend, backend, devops)
+          - a short summary or first response
+          ASSIGNED_TEAM=$(echo "$AI_RESPONSE" | grep -i "team to assign" | awk -F ':' '{print $2}' | xargs)
+          if [[ "$ASSIGNED_TEAM" == "frontend" ]]; then
+           ASSIGNEE="@org/frontend-team"
+          elif [[ "$ASSIGNED_TEAM" == "backend" ]]; then
+           ASSIGNEE="@org/backend-team"
+          elif [[ "$ASSIGNED_TEAM" == "devops" ]]; then
+           ASSIGNEE="@org/devops-team"
+          else
+           ASSIGNEE=""
+          fi
           Title: $ISSUE_TITLE
 
           Body:
@@ -44,7 +58,12 @@ jobs:
           echo "AI_RESPONSE<<EOF" >> $GITHUB_ENV
           echo "$AI_RESPONSE" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
-
+      - name: Assign Issue to Team
+        if: env.ASSIGNEE != ''
+        env:
+         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+         gh issue edit "$ISSUE_NUMBER" --add-assignee "$ASSIGNEE"
       - name: Comment AI Suggestion on Issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
