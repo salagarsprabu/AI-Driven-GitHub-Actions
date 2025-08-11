@@ -74,9 +74,10 @@ jobs:
           git diff --name-only origin/${{ github.event.pull_request.base.ref }}...HEAD > changed_files.txt || true
           wc -l changed_files.txt || true
           # export multiline CHANGED_FILES into GITHUB_ENV
-          echo "CHANGED_FILES<<'EOF'" >> $GITHUB_ENV
+          echo "CHANGED_FILES<<EOF" >> $GITHUB_ENV
           cat changed_files.txt >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
+
 
       ####################################################################
       # Rules-based (regex) scanner (fast)
