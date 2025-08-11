@@ -28,8 +28,8 @@ jobs:
   security-scan:
     name: AI-assisted SAST (rules + GitHub model)
     runs-on: ubuntu-latest
-    steps:
 
+    steps:
       - name: Checkout PR branch
         uses: actions/checkout@v4
         with:
@@ -53,71 +53,80 @@ jobs:
           rg --version || true
           jq --version || true
 
-      - name: Fetch base branch
+      - name: Fetch base branch (for diffs)
         run: |
           # Ensure we have the base ref locally (needed for a three-dot diff)
-          git fetch origin ${{ github.event.pull_request.base.ref }}:refs/remotes/origin/${{ github.event.pull_request.base.ref }} || true
+          git fetch origin "${{ github.event.pull_request.base.ref }}":refs/remotes/origin/"${{ github.event.pull_request.base.ref }}" || true
 
       - name: Save PR diff (used by AI)
         run: |
           # Save a zero-context diff for AI analysis
-          git diff origin/${{ github.event.pull_request.base.ref }}...HEAD -U0 > pr_diff.txt || true
+          git diff origin/"${{ github.event.pull_request.base.ref }}"...HEAD -U0 > pr_diff.txt || true
           echo "=== DIFF START ===" > pr_diff_headline.txt
           head -n 50 pr_diff.txt >> pr_diff_headline.txt || true
           echo "" >> pr_diff_headline.txt
           echo "Changed files:" >> pr_diff_headline.txt
-          git diff --name-only origin/${{ github.event.pull_request.base.ref }}...HEAD >> pr_diff_headline.txt || true
+          git diff --name-only origin/"${{ github.event.pull_request.base.ref }}"...HEAD >> pr_diff_headline.txt || true
 
       - name: Get list of changed files
         id: files
         run: |
-          git diff --name-only origin/${{ github.event.pull_request.base.ref }}...HEAD > changed_files.txt || true
+          git diff --name-only origin/"${{ github.event.pull_request.base.ref }}"...HEAD > changed_files.txt || true
           wc -l changed_files.txt || true
-          # export multiline CHANGED_FILES into GITHUB_ENV
+          # export multiline CHANGED_FILES into GITHUB_ENV (must use exact EOF delimiter, no quotes)
           echo "CHANGED_FILES<<EOF" >> $GITHUB_ENV
           cat changed_files.txt >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
-
 
       ####################################################################
       # Rules-based (regex) scanner (fast)
       ####################################################################
       - name: Rules-based regex scan (fast)
         id: regexscan
+        env:
+          CHANGED_FILES: ${{ env.CHANGED_FILES }}
         run: |
           set -uo pipefail
 
-          # create fallback results file
+          # fallback JSON
           jq -n '{high:[], low:[]}' > regex_results.json
 
-          # Write CHANGED_FILES into a temp file (read from env)
-          printf "%s\n" "$CHANGED_FILES" > /tmp/changed_files_list.txt
+          # Create a temp file with changed files (split lines)
+          printf "%s\n" "$CHANGED_FILES" | sed '/^$/d' > /tmp/changed_files_list.txt
 
           if [ ! -s /tmp/changed_files_list.txt ]; then
             echo "::warning::No changed files detected."
             echo "{}" > regex_results.json
+            # Export empty results safely
+            echo "REGEX_RESULTS<<EOF" >> $GITHUB_ENV
+            cat regex_results.json >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
             exit 0
           fi
 
           # HIGH severity patterns (immediate secrets / private keys / tokens)
           HIGH_PATTERNS=(
-            '[A-Za-z0-9/+=]{40}'                         # generic long-looking secrets (rough)
-            'AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}'          # AWS access key id
-            '-----BEGIN (RSA|PRIVATE|EC|OPENSSH) PRIVATE KEY-----'
-            "(password|passwd)[\"']?\s*[:=]\s*['\"].{3,}"
-            '([A-Fa-f0-9]{32,})'                         # long hex-ish blobs
+            "[A-Za-z0-9/+=]{40}"
+            "AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}"
+            "-----BEGIN (RSA|PRIVATE|EC|OPENSSH) PRIVATE KEY-----"
+            "(password|passwd)[\"']?\\s*[:=]\\s*['\"].{3,}"
+            "([A-Fa-f0-9]{32,})"
           )
 
-          # LOW severity patterns
+          # LOW severity patterns (suspicious but may be false positive)
           LOW_PATTERNS=(
-            '\beval\(|\bexec\('
-            '["'\'']\s*\+\s*\w+\s*\+\s*["'\'']'          # simple string + var + string concat
-            'rejectUnauthorized\s*[:=]\s*false|verify=False'
-            'api[_-]?key|secret[_-]?key'
+            "\\beval\\(|\\bexec\\("
+            "[\"']\\s*\\+\\s*\\w+\\s*\\+\\s*[\"']"
+            "rejectUnauthorized\\s*[:=]\\s*false|verify=False"
+            "api[_-]?key|secret[_-]?key"
           )
 
+          # Initialize results file
+          jq -n '{high:[], low:[]}' > regex_results.json
+
+          # Iterate changed files
           while IFS= read -r file; do
-            # skip blanks and deleted files
+            # ignore blanks and files that no longer exist
             if [ -z "$file" ] || [ ! -f "$file" ]; then
               continue
             fi
@@ -131,7 +140,8 @@ jobs:
             for pat in "${HIGH_PATTERNS[@]}"; do
               rg --no-filename -n --pcre2 "$pat" "$file" 2>/dev/null | while IFS=: read -r line content; do
                 snippet=$(printf '%s' "$content" | sed 's/"/\\"/g' | sed 's/^[[:space:]]*//')
-                jq --arg f "$file" --arg l "$line" --arg m "$snippet" --arg p "$pat" '.high += [{"file":$f,"line":$l,"snippet":$m,"pattern":$p}]' regex_results.json > /tmp/rr.json && mv /tmp/rr.json regex_results.json
+                jq --arg f "$file" --arg l "$line" --arg m "$snippet" --arg p "$pat" \
+                  '.high += [{"file":$f,"line":$l,"snippet":$m,"pattern":$p}]' regex_results.json > /tmp/rr.json && mv /tmp/rr.json regex_results.json
               done
             done
 
@@ -139,22 +149,22 @@ jobs:
             for pat in "${LOW_PATTERNS[@]}"; do
               rg --no-filename -n --pcre2 "$pat" "$file" 2>/dev/null | while IFS=: read -r line content; do
                 snippet=$(printf '%s' "$content" | sed 's/"/\\"/g' | sed 's/^[[:space:]]*//')
-                jq --arg f "$file" --arg l "$line" --arg m "$snippet" --arg p "$pat" '.low += [{"file":$f,"line":$l,"snippet":$m,"pattern":$p}]' regex_results.json > /tmp/rr.json && mv /tmp/rr.json regex_results.json
+                jq --arg f "$file" --arg l "$line" --arg m "$snippet" --arg p "$pat" \
+                  '.low += [{"file":$f,"line":$l,"snippet":$m,"pattern":$p}]' regex_results.json > /tmp/rr.json && mv /tmp/rr.json regex_results.json
               done
             done
 
           done < /tmp/changed_files_list.txt
 
-          # Expose results to environment for downstream steps
+          # Output and export results (multiline-safe)
           cat regex_results.json
-          echo "REGEX_RESULTS<<JSON" >> $GITHUB_ENV
+          echo "REGEX_RESULTS<<EOF" >> $GITHUB_ENV
           cat regex_results.json >> $GITHUB_ENV
-          echo "JSON" >> $GITHUB_ENV
-
-
+          echo "EOF" >> $GITHUB_ENV
 
       ####################################################################
-      # AI analysis: use PR diff to let the model look for logic issues
+      # AI analysis: use PR diff to let the model look for logic issues,
+      # bypassed auth, insecure patterns across files, contextual concerns.
       ####################################################################
       - name: AI Security Analysis (GitHub model)
         id: ai
@@ -169,27 +179,24 @@ jobs:
           if [ ! -s "$DIFF_FILE" ]; then
             echo "::warning::Empty diff; nothing to analyze with AI."
             echo "NO_RISK" > ai_analysis.txt
-            echo "AI_ANALYSIS<<'TXT'" >> $GITHUB_ENV
+            # Export AI_ANALYSIS (multiline-safe)
+            echo "AI_ANALYSIS<<EOF" >> $GITHUB_ENV
             cat ai_analysis.txt >> $GITHUB_ENV
-            echo "TXT" >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
             exit 0
           fi
 
-  
-          read -r -d '' SYSTEM_PROMPT <<'PROMPT' || true
-          You are a strict security reviewer specialized in code-level security. Analyze the provided PR diff and:
-          - Identify any risky security patterns (bypassed authentication/authorization, insecure input validation, SQL injection, command injection, unsafe `eval`/`exec`, insecure deserialization, hardcoded credentials, use of weak crypto/incorrect TLS handling).
-          - For each finding, emit a JSON list of objects with fields: "severity" (HIGH|MEDIUM|LOW), "summary", "file", "line_hint" (if available), and "explain" (one short sentence).
-          - If no risky patterns are found, output the single token: NO_RISK
-          Respond ONLY with valid JSON or the token NO_RISK.
-          PROMPT
-
-
-          # Ensure gh is authenticated (GH CLI will pick up GITHUB_TOKEN in Actions)
-          gh auth status >/dev/null 2>&1 || true
+          # write system prompt to a file (avoids YAML quoting issues)
+          cat > system_prompt.txt <<'PROMPT'
+You are a strict security reviewer specialized in code-level security. Analyze the provided PR diff and:
+- Identify any risky security patterns (bypassed authentication/authorization, insecure input validation, SQL injection, command injection, unsafe `eval`/`exec`, insecure deserialization, hardcoded credentials, use of weak crypto/incorrect TLS handling).
+- For each finding, emit a JSON list of objects with fields: "severity" (HIGH|MEDIUM|LOW), "summary", "file", "line_hint" (if available), and "explain" (one short sentence).
+- If no risky patterns are found, output the single token: NO_RISK
+Respond ONLY with valid JSON or the token NO_RISK.
+PROMPT
 
           # Build GraphQL payload using jq to safely embed the prompt and diff
-          INPUT_JSON=$(jq -nc --arg model "$GH_MODEL" --argjson temp "$MODEL_TEMPERATURE" --arg sys "$SYSTEM_PROMPT" --arg diff "$(cat pr_diff.txt)" '{
+          INPUT_JSON=$(jq -nc --arg model "$GH_MODEL" --argjson temp "$MODEL_TEMPERATURE" --arg sys "$(cat system_prompt.txt)" --arg diff "$(cat pr_diff.txt)" '{
             model: $model,
             temperature: $temp,
             messages: [
@@ -200,6 +207,7 @@ jobs:
           }')
 
           # Call GitHub CreateChatCompletion GraphQL API via gh
+          # Note: GITHUB_TOKEN is provided via step env above; gh picks it up in Actions environment.
           RESPONSE=$(gh api graphql -f query='
             mutation($input: CreateChatCompletionInput!) {
               createChatCompletion(input: $input) {
@@ -209,16 +217,16 @@ jobs:
               }
             }' -F input="$INPUT_JSON" --jq '.data.createChatCompletion.message.content' 2>/dev/null || true)
 
-          # Save output
+          # Save output and export to env (multiline-safe)
           echo "${RESPONSE:-}" > ai_analysis.txt || true
-          echo "AI_ANALYSIS<<'TXT'" >> $GITHUB_ENV
+          echo "AI_ANALYSIS<<EOF" >> $GITHUB_ENV
           cat ai_analysis.txt >> $GITHUB_ENV
-          echo "TXT" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
 
-          # Print to logs
-          echo "=== AI OUTPUT START ==="
+          # Print short preview to logs
+          echo "=== AI OUTPUT (first 200 lines) ==="
           sed -n '1,200p' ai_analysis.txt || true
-          echo "=== AI OUTPUT END ==="
+          echo "=== END AI OUTPUT ==="
 
       ####################################################################
       # Aggregate results, fail or warn, and leave a PR comment
@@ -274,7 +282,6 @@ jobs:
             else
               echo "#### AI raw output (unexpected format):" >> $summary_file
               echo '```' >> $summary_file
-              # include raw but truncated to avoid giant comments
               head -n 200 ai_analysis.txt >> $summary_file || true
               echo '```' >> $summary_file
             fi
@@ -282,10 +289,10 @@ jobs:
 
           echo "" >> $summary_file
 
-          # Export summary for the PR-comment step via GITHUB_ENV
-          echo "SECURITY_SUMMARY<<'MD'" >> $GITHUB_ENV
+          # Export summary for the PR-comment step via GITHUB_ENV (multiline-safe)
+          echo "SECURITY_SUMMARY<<EOF" >> $GITHUB_ENV
           cat $summary_file >> $GITHUB_ENV
-          echo "MD" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
 
           # Decide blocking logic
           BLOCK_REASON=""
@@ -321,6 +328,7 @@ jobs:
             const repo = context.repo.repo;
             const issue_number = context.issue.number;
 
+            // Post or update comment with security summary
             await github.rest.issues.createComment({
               owner,
               repo,
