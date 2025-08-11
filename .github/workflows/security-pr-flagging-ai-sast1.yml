@@ -147,7 +147,7 @@ jobs:
 
             # LOW patterns
             for pat in "${LOW_PATTERNS[@]}"; do
-              rg --no-filename -n --pcre2 "$pat" "$file" 2>/dev/null | while IFS=: read -r line content; do
+              rg --no-filename -n --pcre2 "$pat" "$file" 2>/dev/null || true | while IFS=: read -r line content; do
                 snippet=$(printf '%s' "$content" | sed 's/"/\\"/g' | sed 's/^[[:space:]]*//')
                 jq --arg f "$file" --arg l "$line" --arg m "$snippet" --arg p "$pat" \
                   '.low += [{"file":$f,"line":$l,"snippet":$m,"pattern":$p}]' regex_results.json > /tmp/rr.json && mv /tmp/rr.json regex_results.json
@@ -157,11 +157,14 @@ jobs:
           done < /tmp/changed_files_list.txt
 
           # Output and export results (multiline-safe)
-          {
+          # Output and export results (multiline-safe)
+          cat regex_results.json
+
+           {
            echo 'REGEX_RESULTS<<EOF'
            cat regex_results.json
            echo 'EOF'
-          } >> "$GITHUB_ENV"
+           } >> "$GITHUB_ENV"
 
 
 
