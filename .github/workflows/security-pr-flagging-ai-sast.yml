@@ -149,12 +149,12 @@ jobs:
 
           # write system prompt to a file (avoids YAML quoting issues)
           cat > system_prompt.txt <<'PROMPT'
-You are a strict security reviewer specialized in code-level security. Analyze the provided PR diff and:
-- Identify any risky security patterns (bypassed authentication/authorization, insecure input validation, SQL injection, command injection, unsafe `eval`/`exec`, insecure deserialization, hardcoded credentials, use of weak crypto/incorrect TLS handling).
-- For each finding, emit a JSON list of objects with fields: "severity" (HIGH|MEDIUM|LOW), "summary", "file", "line_hint" (if available), and "explain" (one short sentence).
-- If no risky patterns are found, output the single token: NO_RISK
-Respond ONLY with valid JSON or the token NO_RISK.
-PROMPT
+          You are a strict security reviewer specialized in code-level security. Analyze the provided PR diff and:
+          - Identify any risky security patterns (bypassed authentication/authorization, insecure input validation, SQL injection, command injection, unsafe `eval`/`exec`, insecure deserialization, hardcoded credentials, use of weak crypto/incorrect TLS handling).
+          - For each finding, emit a JSON list of objects with fields: "severity" (HIGH|MEDIUM|LOW), "summary", "file", "line_hint" (if available), and "explain" (one short sentence).
+          - If no risky patterns are found, output the single token: NO_RISK
+          Respond ONLY with valid JSON or the token NO_RISK.
+          PROMPT
 
           # build a safe JSON payload for the model call
           INPUT_JSON=$(jq -nc --arg model "$GH_MODEL" --arg temp "$MODEL_TEMPERATURE" --arg sys "$(cat system_prompt.txt)" --arg diff "$(cat pr_diff.txt)" '{ model: $model, temperature: ($temp|tonumber), messages: [ {role:"system", content:$sys}, {role:"user", content:$diff} ], max_tokens: 1200 }')
