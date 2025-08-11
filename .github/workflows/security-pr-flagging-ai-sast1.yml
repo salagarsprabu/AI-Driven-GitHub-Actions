@@ -158,9 +158,10 @@ jobs:
 
           # Output and export results (multiline-safe)
           cat regex_results.json
-          echo "REGEX_RESULTS<<EOF" >> $GITHUB_ENV
+          echo "REGEX_RESULTS<<JSON" >> $GITHUB_ENV
           cat regex_results.json >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
+          echo "JSON" >> $GITHUB_ENV
+
 
       ####################################################################
       # AI analysis: use PR diff to let the model look for logic issues,
