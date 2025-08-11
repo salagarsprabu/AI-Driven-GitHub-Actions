@@ -172,14 +172,15 @@ jobs:
             exit 0
           fi
 
-          # Compose system prompt (heredoc inside run block)
+  
           read -r -d '' SYSTEM_PROMPT <<'PROMPT' || true
-You are a strict security reviewer specialized in code-level security. Analyze the provided PR diff and:
-- Identify any risky security patterns (bypassed authentication/authorization, insecure input validation, SQL injection, command injection, unsafe `eval`/`exec`, insecure deserialization, hardcoded credentials, use of weak crypto/incorrect TLS handling).
-- For each finding, emit a JSON list of objects with fields: "severity" (HIGH|MEDIUM|LOW), "summary", "file", "line_hint" (if available), and "explain" (one short sentence).
-- If no risky patterns are found, output the single token: NO_RISK
-Respond ONLY with valid JSON or the token NO_RISK.
-PROMPT
+          You are a strict security reviewer specialized in code-level security. Analyze the provided PR diff and:
+          - Identify any risky security patterns (bypassed authentication/authorization, insecure input validation, SQL injection, command injection, unsafe `eval`/`exec`, insecure deserialization, hardcoded credentials, use of weak crypto/incorrect TLS handling).
+          - For each finding, emit a JSON list of objects with fields: "severity" (HIGH|MEDIUM|LOW), "summary", "file", "line_hint" (if available), and "explain" (one short sentence).
+          - If no risky patterns are found, output the single token: NO_RISK
+          Respond ONLY with valid JSON or the token NO_RISK.
+          PROMPT
+
 
           # Ensure gh is authenticated (GH CLI will pick up GITHUB_TOKEN in Actions)
           gh auth status >/dev/null 2>&1 || true
