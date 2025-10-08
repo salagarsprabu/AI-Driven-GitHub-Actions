@@ -7,4 +7,8 @@ public class Hello {
     public String greet() {
         return "New lines added after fix!";
     }
+
+    public String greet1() {
+        return "New lines added after fixed!";
+    }
 }
