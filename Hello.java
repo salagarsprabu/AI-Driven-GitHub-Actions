@@ -14,4 +14,7 @@ public class Hello {
     public String greet2() {
         return "Added new feature!";
     }
+     public String greet3() {
+        return "Added new feature!";
+    }
 }
