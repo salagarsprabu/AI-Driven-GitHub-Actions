@@ -11,4 +11,7 @@ public class Hello {
     public String greet1() {
         return "New lines added after fixed!";
     }
+    public String greet2() {
+        return "Added new feature!";
+    }
 }
