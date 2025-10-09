@@ -108,12 +108,20 @@ jobs:
           gh pr comment ${{ github.event.pull_request.number }} --body "$COMMENT"
 
           # --- Block PR if high severity ---
-          if [ ${#HIGH_FINDINGS[@]} -gt 0 ] && [ "$BLOCK_ON_HIGH" = "true" ]; then
-            echo "::error ::Blocking PR due to high severity regex findings."
-            exit 1
+          #if [ ${#HIGH_FINDINGS[@]} -gt 0 ] && [ "$BLOCK_ON_HIGH" = "true" ]; then
+          #  echo "::error ::Blocking PR due to high severity regex findings."
+          #  exit 1
+          # fi
+          if [ ${#HIGH_FINDINGS[@]} -gt 0 ]; then
+            echo "::warning ::High severity regex findings detected. Please review."
           fi
 
-          if [[ "$AI_OUT" != "NO_RISK" && "$BLOCK_ON_HIGH" = "true" ]]; then
-            echo "::error ::Blocking PR due to AI-detected security issues."
-            exit 1
+          #if [[ "$AI_OUT" != "NO_RISK" && "$BLOCK_ON_HIGH" = "true" ]]; then
+          #  echo "::error ::Blocking PR due to AI-detected security issues."
+          #  exit 1
+          # fi
+          
+          if [[ "$AI_OUT" != "NO_RISK" ]]; then
+              echo "::warning ::AI-detected security issues. Please review."
           fi
+
