@@ -71,13 +71,16 @@ jobs:
             done
           done
 
-          # --- AI scan ---
-          SYSTEM_PROMPT='You are a strict security reviewer. Analyze the PR diff for risky patterns and output human-readable text summary of any HIGH/MEDIUM/LOW issues. If no risk, respond "NO_RISK".'
-          INPUT_JSON=$(printf '{"model":"%s","temperature":%s,"messages":[{"role":"system","content":"%s"},{"role":"user","content":"%s"}],"max_tokens":800}' "$GH_MODEL" "$MODEL_TEMPERATURE" "$SYSTEM_PROMPT" "$DIFF")
-          AI_OUT=$(gh api graphql -f query='
-            mutation($input: CreateChatCompletionInput!) {
-              createChatCompletion(input: $input) { message { content } }
-            }' -F input="$INPUT_JSON" 2>/dev/null || echo "NO_RISK")
+          # --- AI scan using GitHub Models REST API ---
+          SYSTEM_PROMPT='You are a strict security reviewer. Analyze the PR diff for risky patterns and output a short human-readable text summary of any HIGH/MEDIUM/LOW issues. If no risk, respond "NO_RISK".'
+          AI_OUT=$(gh api \
+            -H "X-GitHub-Api-Version: 2023-07-07" \
+            -X POST "models/${GH_MODEL}/completions" \
+            -f temperature="$MODEL_TEMPERATURE" \
+            -f max_tokens=800 \
+            -f messages[]="$(jq -nc --arg role system --arg content "$SYSTEM_PROMPT" '{role:$role,content:$content}')" \
+            -f messages[]="$(jq -nc --arg role user --arg content "$DIFF" '{role:$role,content:$content}')" \
+            --jq '.choices[0].message.content' 2>/dev/null || echo "NO_RISK")
           AI_OUT=${AI_OUT:-NO_RISK}
 
           # --- Aggregate Comment ---
