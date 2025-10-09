@@ -75,14 +75,17 @@ jobs:
         run: |
           set -uo pipefail
           jq -n '{high:[], low:[]}' > regex_results.json
-          printf "%s\n" "$CHANGED_FILES" > /tmp/changed_files_list.txt
-
+          
+          # Write changed files safely
+          printf "%s\n" "${CHANGED_FILES:-}" > /tmp/changed_files_list.txt
+          
           if [ ! -s /tmp/changed_files_list.txt ]; then
             echo "::warning::No changed files detected."
             echo "{}" > regex_results.json
             exit 0
           fi
-
+          
+          # Define patterns
           HIGH_PATTERNS=(
             '[A-Za-z0-9/+=]{40}'
             'AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}'
@@ -90,43 +93,52 @@ jobs:
             "(password|passwd)[\"']?\s*[:=]\s*['\"].{3,}"
             '([A-Fa-f0-9]{32,})'
           )
-
+        
           LOW_PATTERNS=(
             '\beval\(|\bexec\('
             '["'"'"']\s*\+\s*\w+\s*\+\s*["'"'"']'
             'rejectUnauthorized\s*[:=]\s*false|verify=False'
             'api[_-]?key|secret[_-]?key'
           )
-
+        
+          # Scan files
           while IFS= read -r file; do
-            if [ -z "$file" ] || [ ! -f "$file" ]; then
-              continue
-            fi
-
+            [ -z "$file" ] && continue
+            [ ! -f "$file" ] && continue
+          
             case "$file" in
               *.png|*.jpg|*.jpeg|*.gif|*.pdf|*.zip|*.bin) continue ;;
             esac
-
+          
             for pat in "${HIGH_PATTERNS[@]}"; do
-              rg --no-filename -n --pcre2 "$pat" "$file" 2>/dev/null | while IFS=: read -r line content; do
-                snippet=$(printf '%s' "$content" | sed 's/"/\\"/g' | sed 's/^[[:space:]]*//')
-                jq --arg f "$file" --arg l "$line" --arg m "$snippet" --arg p "$pat" '.high += [{"file":$f,"line":$l,"snippet":$m,"pattern":$p}]' regex_results.json > /tmp/rr.json && mv /tmp/rr.json regex_results.json
-              done
+              rg --no-filename -n --pcre2 "$pat" "$file" 2>/dev/null \
+                | while IFS=: read -r line content; do
+                    snippet=$(printf '%s' "$content" | sed 's/"/\\"/g' | sed 's/^[[:space:]]*//')
+                    jq --arg f "$file" --arg l "$line" --arg m "$snippet" --arg p "$pat" \
+                      '.high += [{"file":$f,"line":$l,"snippet":$m,"pattern":$p}]' regex_results.json \
+                      > /tmp/rr.json && mv /tmp/rr.json regex_results.json || true
+                done
             done
-
+          
             for pat in "${LOW_PATTERNS[@]}"; do
-              rg --no-filename -n --pcre2 "$pat" "$file" 2>/dev/null | while IFS=: read -r line content; do
-                snippet=$(printf '%s' "$content" | sed 's/"/\\"/g' | sed 's/^[[:space:]]*//')
-                jq --arg f "$file" --arg l "$line" --arg m "$snippet" --arg p "$pat" '.low += [{"file":$f,"line":$l,"snippet":$m,"pattern":$p}]' regex_results.json > /tmp/rr.json && mv /tmp/rr.json regex_results.json
-              done
+              rg --no-filename -n --pcre2 "$pat" "$file" 2>/dev/null \
+                | while IFS=: read -r line content; do
+                    snippet=$(printf '%s' "$content" | sed 's/"/\\"/g' | sed 's/^[[:space:]]*//')
+                    jq --arg f "$file" --arg l "$line" --arg m "$snippet" --arg p "$pat" \
+                      '.low += [{"file":$f,"line":$l,"snippet":$m,"pattern":$p}]' regex_results.json \
+                      > /tmp/rr.json && mv /tmp/rr.json regex_results.json || true
+                done
             done
-
+          
           done < /tmp/changed_files_list.txt
-
+          
+          # Print results
           cat regex_results.json
-          echo "REGEX_RESULTS<<'JSON'" >> $GITHUB_ENV
+          
+          # Correct here-doc for GitHub Actions env
+          echo "REGEX_RESULTS<<EOF" >> $GITHUB_ENV
           cat regex_results.json >> $GITHUB_ENV
-          echo "JSON" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
 
       - name: AI Security Analysis (GitHub model)
         id: ai
