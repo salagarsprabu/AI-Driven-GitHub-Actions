@@ -73,6 +73,7 @@ jobs:
 
           # --- AI scan using GitHub Models REST API ---
           SYSTEM_PROMPT='You are a strict security reviewer. Analyze the PR diff for risky patterns and output a short human-readable text summary of any HIGH/MEDIUM/LOW issues. If no risk, respond "NO_RISK".'
+          SYSTEM_PROMPT+=' Respond only with plain text summary in table format.'
           AI_OUT=$(gh api \
             -H "X-GitHub-Api-Version: 2023-07-07" \
             -X POST "models/${GH_MODEL}/completions" \
