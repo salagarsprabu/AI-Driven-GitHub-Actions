@@ -18,7 +18,7 @@ public class Hello {
         return "Added new feature!";
     }
     public String greet5() {
-        return "Added new feature!";
+        return "Added new feature2";
     }
      public String greet6() {
         return "Added new feature flag!";
