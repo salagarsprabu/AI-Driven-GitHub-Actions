@@ -1,26 +1,17 @@
 public class Hello {
+    public static void main(String[] args) {
+        // Hardcoded AWS keys (triggers HIGH regex)
+        String accessKey = "AKIA1234567890TESTKEY";
+        String secretKey = "abcdabcdabcdabcdabcdabcdabcdabcdabcd";
 
-    public String greet(String user) {
-        return "Hello, " + user + "!";
-    }
+        // Hardcoded password (triggers HIGH regex)
+        String password = "SuperSecret123";
 
-    public String greet() {
-        return "New lines added after fix!";
-    }
+        // Unsafe code (triggers LOW regex)
+        eval("2 + 2");
+        String apiKey = "my-secret-api-key";
 
-    public String greet1() {
-        return "New lines added after fixed!";
-    }
-    public String greet2() {
-        return "Added new feature!";
-    }
-     public String greet3() {
-        return "Added new feature!";
-    }
-    public String greet5() {
-        return "Added new feature2";
-    }
-     public String greet6() {
-        return "Added new feature flag!";
+        System.out.println("Hello, world!");
     }
 }
+
