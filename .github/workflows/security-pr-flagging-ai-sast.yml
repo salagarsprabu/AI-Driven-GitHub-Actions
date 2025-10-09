@@ -1,5 +1,5 @@
-# .github/workflows/security-pr-scan.yml
-name: Security PR Scan
+# .github/workflows/security-pr-ai-scan-ultra.yml
+name: simplified PR Security Scan
 
 on:
   pull_request:
@@ -9,117 +9,88 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  models: read
 
 env:
-  BLOCK_ON_FINDINGS: "true"
+  BLOCK_ON_HIGH: "true"
+  GH_MODEL: "gpt-4o-mini"
+  MODEL_TEMPERATURE: "0"
 
 jobs:
-  security-scan:
+  pr-security-scan:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
+
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Install tools
+      - name: Install Tools
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y ripgrep jq
+          sudo apt-get install -y ripgrep jq curl
 
-      - name: Get changed files
-        id: files
-        run: |
-          git fetch origin ${{ github.event.pull_request.base.ref }}:refs/remotes/origin/${{ github.event.pull_request.base.ref }}
-          git diff --name-only origin/${{ github.event.pull_request.base.ref }}...HEAD > changed_files.txt
-          echo "CHANGED_FILES<<EOF" >> $GITHUB_ENV
-          cat changed_files.txt >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-
-      - name: Regex security scan
-        id: regexscan
+      - name: Run Regex + AI Security Scan
+        shell: bash
+        env:
+          GH_MODEL: ${{ env.GH_MODEL }}
+          MODEL_TEMPERATURE: ${{ env.MODEL_TEMPERATURE }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BLOCK_ON_HIGH: ${{ env.BLOCK_ON_HIGH }}
         run: |
           set -uo pipefail
-          jq -n '{high:[], low:[]}' > regex_results.json
 
-          HIGH_PATTERNS=(
-            '[A-Za-z0-9/+=]{40}'
-            'AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}'
-            '-----BEGIN (RSA|PRIVATE|EC|OPENSSH) PRIVATE KEY-----'
-            "(password|passwd)[\"']?\s*[:=]\s*['\"].{3,}"
-          )
+          # --- Get changed files & PR diff ---
+          git fetch origin ${{ github.event.pull_request.base.ref }}:refs/remotes/origin/${{ github.event.pull_request.base.ref }}
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.event.pull_request.base.ref }}...HEAD)
+          DIFF=$(git diff origin/${{ github.event.pull_request.base.ref }}...HEAD -U0)
 
-          LOW_PATTERNS=(
-            '\beval\(|\bexec\('
-            'api[_-]?key|secret[_-]?key'
-          )
-
+          # --- Regex scan ---
+          HIGH_PATTERNS=('AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}' '[A-Za-z0-9/+=]{40}' '-----BEGIN (RSA|PRIVATE|EC|OPENSSH) PRIVATE KEY-----' "(password|passwd)[\"']?\s*[:=]\s*['\"].{3,}")
+          LOW_PATTERNS=('\beval\(|\bexec\(' 'api[_-]?key|secret[_-]?key')
+          REGEX_JSON=$(jq -n '{high:[], low:[]}')
           while IFS= read -r file; do
-            [ -z "$file" ] && continue
-            [ ! -f "$file" ] && continue
-            case "$file" in
-              *.png|*.jpg|*.jpeg|*.gif|*.pdf|*.zip|*.bin) continue ;;
-            esac
-
+            [ -f "$file" ] || continue
+            case "$file" in *.png|*.jpg|*.jpeg|*.gif|*.pdf|*.zip|*.bin) continue;; esac
             for pat in "${HIGH_PATTERNS[@]}"; do
               rg --no-filename -n --pcre2 "$pat" "$file" 2>/dev/null \
                 | while IFS=: read -r line content; do
-                    snippet=$(printf '%s' "$content" | sed 's/"/\\"/g' | sed 's/^[[:space:]]*//')
-                    jq --arg f "$file" --arg l "$line" --arg m "$snippet" --arg p "$pat" \
-                      '.high += [{"file":$f,"line":$l,"snippet":$m,"pattern":$p}]' regex_results.json \
-                      > /tmp/rr.json && mv /tmp/rr.json regex_results.json || true
+                    snippet=$(echo "$content" | sed 's/"/\\"/g')
+                    REGEX_JSON=$(echo "$REGEX_JSON" | jq --arg f "$file" --arg l "$line" --arg m "$snippet" --arg p "$pat" '.high += [{"file":$f,"line":$l,"snippet":$m,"pattern":$p}]')
                 done
             done
-
             for pat in "${LOW_PATTERNS[@]}"; do
               rg --no-filename -n --pcre2 "$pat" "$file" 2>/dev/null \
                 | while IFS=: read -r line content; do
-                    snippet=$(printf '%s' "$content" | sed 's/"/\\"/g' | sed 's/^[[:space:]]*//')
-                    jq --arg f "$file" --arg l "$line" --arg m "$snippet" --arg p "$pat" \
-                      '.low += [{"file":$f,"line":$l,"snippet":$m,"pattern":$p}]' regex_results.json \
-                      > /tmp/rr.json && mv /tmp/rr.json regex_results.json || true
+                    snippet=$(echo "$content" | sed 's/"/\\"/g')
+                    REGEX_JSON=$(echo "$REGEX_JSON" | jq --arg f "$file" --arg l "$line" --arg m "$snippet" --arg p "$pat" '.low += [{"file":$f,"line":$l,"snippet":$m,"pattern":$p}]')
                 done
             done
-          done < changed_files.txt
+          done <<< "$CHANGED_FILES"
 
-          cat regex_results.json
-          echo "REGEX_RESULTS<<EOF" >> $GITHUB_ENV
-          cat regex_results.json >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
+          # --- AI scan ---
+          SYSTEM_PROMPT='You are a strict security reviewer. Analyze the PR diff for risky patterns and output JSON array with severity (HIGH|MEDIUM|LOW), summary, file, line_hint, explain. If no risk, output NO_RISK.'
+          INPUT_JSON=$(jq -nc --arg model "$GH_MODEL" --arg temp "$MODEL_TEMPERATURE" --arg sys "$SYSTEM_PROMPT" --arg diff "$DIFF" '{model:$model,temperature:($temp|tonumber),messages:[{role:"system",content:$sys},{role:"user",content:$diff}],max_tokens:1200}')
+          AI_OUT=$(gh api graphql -f query='
+            mutation($input: CreateChatCompletionInput!) {
+              createChatCompletion(input: $input) { message { content } }
+            }' -F input="$INPUT_JSON" --jq '.data.createChatCompletion.message.content' 2>/dev/null || echo "NO_RISK")
 
-      - name: Comment on PR
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const results = JSON.parse(process.env.REGEX_RESULTS || '{"high":[],"low":[]}');
-            let body = '### Automated Security Scan Results\n';
-            if(results.high.length === 0 && results.low.length === 0){
-              body += '- No security issues found.';
-            } else {
-              if(results.high.length > 0){
-                body += '#### High severity:\n';
-                results.high.forEach(r => body += `- \`${r.file}:${r.line}\` — ${r.pattern}\n`);
-              }
-              if(results.low.length > 0){
-                body += '#### Low/Info severity:\n';
-                results.low.forEach(r => body += `- \`${r.file}:${r.line}\` — ${r.pattern}\n`);
-              }
-            }
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body
-            });
+          # --- Aggregate results ---
+          COMMENT="### Security Scan Results\n\n**Regex findings:**\n"
+          COMMENT+=$(jq -r '.high[] | "- `\(.file):\(.line)` — \(.pattern)`"' <<< "$REGEX_JSON")
+          COMMENT+=$'\n**AI findings:**\n'
+          if [ "$AI_OUT" = "NO_RISK" ]; then COMMENT+="- None"; else COMMENT+="$AI_OUT"; fi
+          echo "$COMMENT"
 
-      - name: Fail PR if high severity
-        if: always()
-        run: |
-          HIGH_COUNT=$(jq -r '.high | length' regex_results.json)
-          if [ "$HIGH_COUNT" -gt 0 ] && [ "${BLOCK_ON_FINDINGS}" = "true" ]; then
-            echo "Blocking PR due to high severity findings."
+          # --- Post comment ---
+          gh pr comment ${{ github.event.pull_request.number }} --body "$COMMENT"
+
+          # --- Fail PR if any high severity ---
+          HIGH_COUNT=$(jq -r '.high | length' <<< "$REGEX_JSON")
+          AI_HIGH=$(jq -r 'try map(select(.severity=="HIGH")) | length // 0' <<< "$AI_OUT" 2>/dev/null || echo 0)
+          if [ "$HIGH_COUNT" -gt 0 ] || [ "$AI_HIGH" -gt 0 ] && [ "$BLOCK_ON_HIGH" = "true" ]; then
+            echo "::error ::Blocking PR due to high severity findings."
             exit 1
-          else
-            echo "No blocking findings."
           fi
