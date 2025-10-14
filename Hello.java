@@ -5,11 +5,13 @@ public class Hello {
         String secretKey = "abcdabcdabcdabcdabcdabcdabcdabcdabcdddd";
 
         // Hardcoded password (triggers HIGH regex)
-        String password = "SuperSecret123";
+        String password = "SuperSecret1235";
+        String password = "SuperSecret12358900000";
 
         // Unsafe code (triggers LOW regex)
         eval("2 + 2");
         String apiKey = "my-secret-api-key";
+         String apiKey = "my-secret-api-key-two";
 
         System.out.println("Hello, world!");
     }
