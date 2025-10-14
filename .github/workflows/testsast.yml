@@ -11,7 +11,7 @@ permissions:
   models: read
 
 env:
-  GH_MODEL: "gpt-4o-mini"
+  GH_MODEL: "openai/gpt-4o"
   MODEL_TEMPERATURE: "0"
   BLOCK_ON_HIGH: "false" # Set to "true" if you want to block merges
 
