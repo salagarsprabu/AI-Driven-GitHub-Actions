@@ -5,7 +5,7 @@ public class Hello {
         String secretKey = "abcdabcdabcdabcdabcdabcdabcdabcdabcdddd";
 
         // Hardcoded password (triggers HIGH regex)
-        String password = "SuperSecret1235";
+        String password = "SuperSecret1235eeeee";
         String password = "SuperSecret12358900000";
 
         // Unsafe code (triggers LOW regex)
